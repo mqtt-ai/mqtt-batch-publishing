@@ -43,14 +43,14 @@ MQTT 5.0 Batch PUBLISH Packet
 
 ### **2.2 Property Definitions**
 
-* **batch-format (User Property):** MUST be present. A UTF-8 string identifying the version of this batch payload specification (e.g., "v2"). Subscribers use this to select the correct parsing logic.2  
-* **batch-size (User Property):** MUST be present. A UTF-8 string representing a positive integer (N) indicating the exact number of logical sub-messages contained within the Batch Payload.2
+* **batch-format (User Property):** MUST be present. A UTF-8 string identifying the version of this batch payload specification (e.g., "v1"). Subscribers use this to select the correct parsing logic.
+* **batch-size (User Property):** MUST be present. A UTF-8 string representing a positive integer (N) indicating the exact number of logical sub-messages contained within the Batch Payload.
 
 ### **2.3 Payload Format (Batch Payload)**
 
 The Batch Payload consists of N concatenated sub-messages, where N is the integer value specified by the batch-size User Property. Each sub-message MUST be structured as:
 
-* **Length:** A Variable Byte Integer (VBI) as defined in the MQTT 5.0 specification, indicating the number of bytes in the subsequent SubPayload. The VBI encoding allows lengths from 0 up to 268,435,455 bytes using 1 to 4 bytes for the length prefix. 
+* **Length:** A Variable Byte Integer (VBI) as defined in the MQTT 5.0 specification, indicating the number of bytes in the subsequent SubPayload. The VBI encoding allows lengths from 0 up to 256MB using 1 to 4 bytes for the length prefix. 
 * **SubPayload:** The actual application data bytes for the logical sub-message. The format of this data is application-specific. Zero-length SubPayloads (Length \= 0\) MAY be permitted based on application policy.
 
 ### **2.4 Example (Conceptual)**
@@ -61,7 +61,7 @@ User Property: `batch-format \= v1`
 User Property: `batch-size \= 2`
 Payload:  
 `0x04 Msg1 0x0A LongerMsg2`
-(Note: 0x04 and 0x0A represent the single-byte VBI encoding for lengths 4 and 10 respectively) 2
+(Note: 0x04 and 0x0A represent the single-byte VBI encoding for lengths 4 and 10 respectively)
 
 ## **3\. Implementation Requirements**
 
@@ -100,9 +100,9 @@ Subscribers MUST handle malformed batches robustly to ensure stability and preve
 Subscribers MUST detect the following error conditions during parsing:
 
 1. **Missing/Invalid Properties:** batch-format or batch-size User Property missing, or batch-size is not a positive integer string.  
-2. **Unsupported Format:** batch-format value indicates a version not supported by the subscriber.  
+2. **Unsupported Format:** batch-format value indicates a version not supported by the subscriber.
 3. **Invalid VBI Length:** VBI sequence for a sub-payload length is malformed (e.g., \> 4 bytes) or decodes to an invalid value (e.g., negative, or zero if disallowed by policy).
-4. **Length Exceeds Payload Boundary:** A decoded VBI length value is greater than the number of bytes remaining in the Batch Payload buffer.  
+4. **Length Exceeds Payload Boundary:** A decoded VBI length value is greater than the number of bytes remaining in the Batch Payload buffer.
 5. **Incomplete Payload Data:** The Batch Payload ends prematurely while reading a VBI length or its corresponding sub-payload data.  
 6. **Count Mismatch:** The number of sub-messages successfully parsed does not match the value specified in batch-size (either fewer messages found, or trailing data exists after the Nth message).
 
@@ -118,7 +118,7 @@ Subscribers MUST detect the following error conditions during parsing:
 
 Core MQTT 5.0 features apply to the PUBLISH packet containing the batch as a single unit.
 
-* **Retain Flag (RETAIN=1):** If set, the broker MUST store the *entire* PUBLISH packet (with the full Batch Payload and all properties) as the single retained message for the topic, replacing any previous one.2 New subscribers receive this full batch message. Clearing requires publishing a zero-byte payload with RETAIN=1.2  
+* **Retain Flag (RETAIN=1):** If set, the broker MUST store the *entire* PUBLISH packet (with the full Batch Payload and all properties) as the single retained message for the topic, replacing any previous one. New subscribers receive this full batch message. Clearing requires publishing a zero-byte payload with RETAIN=1.
 * **QoS Levels (0, 1, 2):** The QoS level applies to the delivery assurance of the *entire batch packet* between network hops.
   * QoS 1 (PUBACK) and QoS 2 (PUBREC/PUBREL/PUBCOMP) acknowledgments confirm delivery of the *batch packet*, identified by its Packet Identifier.
   * **Crucially, MQTT QoS does NOT provide application-level atomicity for the sub-messages within the batch.** A subscriber might acknowledge receipt (PUBACK/PUBREC) but fail during subsequent parsing/processing of the Batch Payload. Applications requiring all-or-nothing processing of sub-messages MUST implement their own end-to-end acknowledgment mechanism.  
@@ -128,7 +128,7 @@ Core MQTT 5.0 features apply to the PUBLISH packet containing the batch as a sin
 
 While this specification uses User Properties and a custom binary format, alternatives exist:
 
-* **JSON Array Payload:** Uses Payload Format Indicator=1, Content Type=application/json. Human-readable, uses standard libraries, but higher overhead and parsing cost.20  
+* **JSON Array Payload:** Uses Payload Format Indicator=1, Content Type=application/json. Human-readable, uses standard libraries, but higher overhead and parsing cost.
 * **Protobuf/MessagePack Payload:** Uses Payload Format Indicator=0, appropriate Content Type. More efficient binary formats, faster parsing than JSON, but require specific libraries/schemas (Protobuf) and are not human-readable.
 
 The User Property approach is chosen for its flexibility in defining the binary format (allowing potential for minimal overhead), clear signaling of intent via standard MQTT 5.0 properties, and decoupling metadata from the payload. This requires custom parsing logic but offers control over the format.
@@ -140,10 +140,10 @@ Implementing this batching mechanism requires careful attention to security.
 * **Authentication & Authorization (Mandatory):**  
   * Clients publishing or subscribing to batch topics MUST be authenticated by the broker (e.g., username/password, client certificates).
   * Brokers MUST use Access Control Lists (ACLs) to enforce that only authorized clients can publish/subscribe to specific batch topics, following the principle of least privilege.
-* **Transport Security (Mandatory):**  
+* **Transport Security (Mandatory):**
   * Connections MUST use TLS (typically port 8883\) to encrypt the entire MQTT communication (headers, properties, payload) and protect against eavesdropping and tampering. Client and server certificate validation MUST be performed.
-* **Payload Validation (Mandatory):**  
-  * Subscribers MUST perform rigorous structural validation of the Batch Payload as defined in Section 4 (Error Handling) before attempting to process sub-payloads. Parsers MUST fail safely on error.  
+* **Payload Validation (Mandatory):**
+  * Subscribers MUST perform rigorous structural validation of the Batch Payload as defined in Section 4 (Error Handling) before attempting to process sub-payloads. Parsers MUST fail safely on error.
   * Applications SHOULD perform content validation on each individual SubPayload based on application-specific logic (e.g., data type, range checks) after successful structural parsing.
 * **Denial of Service (DoS) Mitigation (Mandatory):**  
   * Enforce configurable limits on batch-size and max-total-batch-payload-size (Section 3.3) on both publisher and subscriber to prevent resource exhaustion attacks.
@@ -154,7 +154,7 @@ Implementing this batching mechanism requires careful attention to security.
 
 ## **8\. Future Considerations**
 
-* **Versioning:** New batch formats can be introduced by defining new values for the batch-format User Property (e.g., "v2"). Subscribers would need to support multiple versions.  
+* **Versioning:** New batch formats can be introduced by defining new values for the batch-format User Property (e.g., "v2"). Subscribers would need to support multiple versions.
 * **Compression:** To reduce bandwidth, the *entire* Batch Payload MAY be compressed (e.g., using gzip, Zstandard). Compression SHOULD be applied *after* constructing the VBI-prefixed batch payload. The use of compression SHOULD be signaled using the standard MQTT 5.0 Content Type property (e.g., application/vnd.mqtt-batch.v2+gzip) rather than a User Property. 
 * **Application-Level Priority:** Priority among sub-messages within a batch is an application-level concern. It would require adding priority information within the SubPayload format and implementing corresponding logic in the subscriber. It is NOT handled by MQTT itself.
 
